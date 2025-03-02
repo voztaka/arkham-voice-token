@@ -36,7 +36,7 @@ void TokenManager::initializeTokens()
 {
     std::vector<std::string> defaultTokens = {
         "skull", "cultist", "elder_thing", "tablet",
-        "tentacle", "elder_sign", "-1", "0", "+1", "-2"
+        "tentacle", "elder_sign", "-1", "0", "+1", "-2", "-3", "-4"
     };
 
     for (const auto& token : defaultTokens) {
