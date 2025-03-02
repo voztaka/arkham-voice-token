@@ -17,6 +17,9 @@ public:
     
     bool isRunning() const;
     std::string getLastError() const;
+
+    static std::vector<std::string> getAvailableComPorts();
+    void setPortName(const std::string& portName);
     
 private:
     void threadFunction();

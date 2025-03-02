@@ -14,6 +14,32 @@ SerialCommunicator::~SerialCommunicator() {
     stop();
 }
 
+std::vector<std::string> SerialCommunicator::getAvailableComPorts() {
+    std::vector<std::string> ports;
+
+    char deviceName[MAX_PATH];
+    for (int i = 1; i <= 30; i++) {  // COM1 ~ COM30 check
+        sprintf_s(deviceName, "\\\\.\\COM%d", i);
+        HANDLE hSerial = CreateFileA(deviceName, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+        
+        if (hSerial != INVALID_HANDLE_VALUE) {
+            CloseHandle(hSerial);
+            char portName[10];
+            sprintf_s(portName, "COM%d", i);
+            ports.push_back(portName);
+        }
+    }
+    
+    return ports;
+}
+
+void SerialCommunicator::setPortName(const std::string& portName) {
+    if (m_isRunning) {
+        stop();
+    }
+    m_portName = portName;
+}
+
 bool SerialCommunicator::start(std::function<void()> onSignalCallback) {
     if (m_isRunning) {
         m_lastError = "Serial thread is already running";

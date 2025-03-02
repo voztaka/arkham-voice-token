@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 #include "Constants.h"
 #include <commctrl.h>
+#include "Utilities.h"
 #include <string>
 #include <sstream>
 
@@ -20,6 +21,21 @@ MainWindow::MainWindow(HINSTANCE hInstance)
 MainWindow::~MainWindow() {
     // Smart pointers will clean up automatically
 }
+
+void MainWindow::refreshComPorts() {
+    SendMessage(m_comPortCombo, CB_RESETCONTENT, 0, 0);
+    
+    auto ports = SerialCommunicator::getAvailableComPorts();
+    for (const auto& port : ports) {
+        std::wstring wport = Utilities::AnsiToWide(port); 
+        SendMessage(m_comPortCombo, CB_ADDSTRING, 0, (LPARAM)wport.c_str());
+    }
+    
+    if (!ports.empty()) {
+        SendMessage(m_comPortCombo, CB_SETCURSEL, 0, 0);
+    }
+}
+
 
 bool MainWindow::create() {
     // Initialize Common Controls
@@ -136,6 +152,27 @@ LRESULT MainWindow::windowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPara
                 }
                 return 0;
             }
+            if (LOWORD(wParam) == Constants::ID_COM_PORT_COMBO && HIWORD(wParam) == CBN_SELCHANGE) {
+                int idx = SendMessage(m_comPortCombo, CB_GETCURSEL, 0, 0);
+                if (idx != CB_ERR) {
+                    wchar_t buffer[20];
+                    SendMessage(m_comPortCombo, CB_GETLBTEXT, idx, (LPARAM)buffer);
+                    
+                    std::wstring wport(buffer);
+                    std::string port(wport.begin(), wport.end());
+                    
+                    m_serialComm->setPortName(port);
+                    
+                    m_serialComm->start([this]() {
+                        PostMessage(m_hwnd, WM_COMMAND, Constants::ID_DRAW_BUTTON, 0);
+                    });
+                }
+                return 0;
+            }
+            else if (LOWORD(wParam) == Constants::ID_REFRESH_PORTS_BUTTON) {
+                refreshComPorts();
+                return 0;
+            }
             break;
             
         case WM_DESTROY:
@@ -178,6 +215,41 @@ void MainWindow::initializeControls() {
             m_hInstance,
             NULL
         );
+
+        CreateWindowW(
+            L"STATIC",
+            L"COM Port:",
+            WS_VISIBLE | WS_CHILD,
+            120, 10, 70, 30,
+            m_hwnd,
+            NULL,
+            m_hInstance,
+            NULL
+        );
+
+        m_comPortCombo = CreateWindowW(
+            L"COMBOBOX",
+            NULL,
+            WS_VISIBLE | WS_CHILD | CBS_DROPDOWNLIST | WS_VSCROLL,
+            200, 10, 100, 200,
+            m_hwnd,
+            (HMENU)Constants::ID_COM_PORT_COMBO,
+            m_hInstance,
+            NULL
+        );
+
+        CreateWindowW(
+            L"BUTTON",
+            L"Refresh",
+            WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+            310, 10, 70, 30,
+            m_hwnd,
+            (HMENU)Constants::ID_REFRESH_PORTS_BUTTON,
+            m_hInstance,
+            NULL
+        );
+    
+        refreshComPorts();
         
         // Create edit control for count
         HWND hEdit = CreateWindowW(

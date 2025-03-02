@@ -14,4 +14,6 @@ namespace Constants {
     constexpr int TOKEN_PROCESSING_DELAY_MS = 3000;
     constexpr int SERIAL_READ_BUFFER_SIZE = 64;
     constexpr int SERIAL_THREAD_SLEEP_MS = 10;
+    constexpr int ID_COM_PORT_COMBO = 1003;
+    constexpr int ID_REFRESH_PORTS_BUTTON = 1004;
 }

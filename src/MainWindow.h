@@ -27,6 +27,9 @@ private:
     HINSTANCE m_hInstance;
     HWND m_hwnd;
     std::vector<HWND> m_tokenControls;
+
+    HWND m_comPortCombo;
+    void refreshComPorts();
     
     std::unique_ptr<TokenManager> m_tokenManager;
     std::unique_ptr<AudioPlayer> m_audioPlayer;
