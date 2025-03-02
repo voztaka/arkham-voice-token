@@ -1,4 +1,5 @@
-#include "tokenmanager.h"
+#define NOMINMAX  
+#include "TokenManager.h"
 #include <algorithm>
 #include <chrono>
 
@@ -6,15 +7,12 @@
 #include <windows.h>
 #endif
 
-TokenManager::TokenManager()
-    : m_rng(std::chrono::steady_clock::now().time_since_epoch().count())
-{
-    loadTokenData();
+TokenManager::TokenManager() 
+    : m_rng(std::chrono::steady_clock::now().time_since_epoch().count()) {
+    initializeTokens();
 }
 
-
-
-std::string TokenManager::getResourcePath(const std::string& filename) const {
+std::string TokenManager::getResourcePath(const std::string& filename) {
 #ifdef _WIN32
     char modulePath[MAX_PATH];
     GetModuleFileNameA(NULL, modulePath, MAX_PATH);
@@ -22,57 +20,38 @@ std::string TokenManager::getResourcePath(const std::string& filename) const {
     std::string dirPath = exePath.substr(0, exePath.find_last_of("\\"));
     return dirPath + "\\resources\\" + filename;
 #else
-    // Non-Windows implementation (not needed for your case)
     return "resources/" + filename;
 #endif
 }
 
-void TokenManager::loadTokenData()
-{
-    initializeTokens();
-}
-
-void TokenManager::initializeTokens()
-{
+void TokenManager::initializeTokens() {
     std::vector<std::string> defaultTokens = {
-        "skull", "cultist", "elder_thing", "tablet",
-        "tentacle", "elder_sign", "-1", "0", "+1", "-2", "-3", "-4"
+        "skull", "cultist", "elder_thing", "tablet", "tentacle", 
+        "elder_sign", "-1", "0", "+1", "-2", "-3", "-4"
     };
-
+    
     for (const auto& token : defaultTokens) {
         m_tokenCounts[token] = 0;
         m_tokenUsages[token] = 0;
     }
 }
 
-void TokenManager::saveTokenData() const
-{
-    // No longer needed as we're not saving to a file
-}
-
-
-void TokenManager::setTokenCount(const std::string& token, int count)
-{
+void TokenManager::setTokenCount(const std::string& token, int count) {
     if (m_tokenCounts.find(token) != m_tokenCounts.end()) {
-        m_tokenCounts[token] = (std::max)(0, count);
-        saveTokenData();
+        m_tokenCounts[token] = std::max(0, count);
     }
 }
 
-int TokenManager::getTokenCount(const std::string& token) const
-{
+int TokenManager::getTokenCount(const std::string& token) const {
     auto it = m_tokenCounts.find(token);
     return (it != m_tokenCounts.end()) ? it->second : 0;
 }
 
-std::string TokenManager::getRandomToken()
-{
+std::optional<std::string> TokenManager::getRandomToken() {
     std::vector<std::string> availableTokens;
     
-    for (const auto& pair : m_tokenCounts) {
-        const std::string& token = pair.first;
-        int count = pair.second;
-        
+    // Build the pool of available tokens
+    for (const auto& [token, count] : m_tokenCounts) {
         if (count > 0) {
             for (int i = 0; i < count; ++i) {
                 availableTokens.push_back(token);
@@ -81,9 +60,10 @@ std::string TokenManager::getRandomToken()
     }
     
     if (availableTokens.empty()) {
-        return std::string();
+        return std::nullopt;
     }
     
+    // Shuffle using Fisher-Yates algorithm
     for (int i = static_cast<int>(availableTokens.size()) - 1; i > 0; --i) {
         std::uniform_int_distribution<> dist(0, i);
         int j = dist(m_rng);
@@ -92,24 +72,19 @@ std::string TokenManager::getRandomToken()
     
     std::string selectedToken = availableTokens[0];
     ++m_tokenUsages[selectedToken];
-    saveTokenData();
     
     return selectedToken;
 }
 
-
-int TokenManager::getTokenUsageCount(const std::string& token) const
-{
+int TokenManager::getTokenUsageCount(const std::string& token) const {
     auto it = m_tokenUsages.find(token);
     return (it != m_tokenUsages.end()) ? it->second : 0;
 }
 
-std::map<std::string, int> TokenManager::getAllTokenCounts() const
-{
+const std::map<std::string, int>& TokenManager::getAllTokenCounts() const {
     return m_tokenCounts;
 }
 
-std::map<std::string, int> TokenManager::getAllTokenUsages() const
-{
+const std::map<std::string, int>& TokenManager::getAllTokenUsages() const {
     return m_tokenUsages;
 }
