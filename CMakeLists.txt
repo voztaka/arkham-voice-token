@@ -17,6 +17,8 @@ set(SOURCES
     src/TokenManager.cpp
     src/AudioPlayer.cpp
     src/SerialCommunicator.cpp
+    src/Profile.cpp
+    src/ProfileManager.cpp
 )
 
 # Header files
@@ -26,6 +28,8 @@ set(HEADERS
     src/AudioPlayer.h
     src/SerialCommunicator.h
     src/Constants.h
+    src/Profile.h
+    src/ProfileManager.h
 )
 
 # Add executable

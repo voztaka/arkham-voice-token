@@ -1,5 +1,7 @@
+#define NOMINMAX  
 #include "MainWindow.h"
 #include "Constants.h"
+#include "Profile.h"
 #include <commctrl.h>
 #include "Utilities.h"
 #include <string>
@@ -15,6 +17,7 @@ MainWindow::MainWindow(HINSTANCE hInstance)
       m_hwnd(NULL),
       m_tokenManager(std::make_unique<TokenManager>()),
       m_audioPlayer(std::make_unique<AudioPlayer>()),
+      m_profileManager(std::make_unique<ProfileManager>()),
       m_serialComm(std::make_unique<SerialCommunicator>(Constants::DEFAULT_COM_PORT, Constants::DEFAULT_BAUD_RATE)) {
 }
 
@@ -130,7 +133,8 @@ LRESULT MainWindow::windowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPara
                 drawToken();
                 return 0;
             }
-            else if (LOWORD(wParam) >= Constants::ID_TOKEN_START) {
+            else if (LOWORD(wParam) >= Constants::ID_TOKEN_START && 
+                    LOWORD(wParam) < Constants::ID_ADD_PROFILE_BUTTON) {
                 int tokenIndex = LOWORD(wParam) - Constants::ID_TOKEN_START;
                 if (tokenIndex >= 0 && tokenIndex < m_tokenControls.size()) {
                     wchar_t buffer[16];
@@ -173,6 +177,25 @@ LRESULT MainWindow::windowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPara
                 refreshComPorts();
                 return 0;
             }
+            // 프로필 관련 명령 처리
+            handleProfileAction(wParam, lParam);
+            return 0;
+
+        case WM_NOTIFY:
+            // 탭 컨트롤 선택 변경 처리
+            if (((LPNMHDR)lParam)->idFrom == Constants::ID_PROFILE_TAB) {
+                if (((LPNMHDR)lParam)->code == TCN_SELCHANGE) {
+                    int newTab = TabCtrl_GetCurSel(m_profileTab);
+                    
+                    // 프로필 컨트롤 표시/숨김 변경
+                    for (int i = 0; i < m_profileManager->getProfileCount(); i++) {
+                        for (HWND control : m_profileControls[i]) {
+                            ShowWindow(control, i == newTab ? SW_SHOW : SW_HIDE);
+                        }
+                    }
+                    return 0;
+                }
+            }
             break;
             
         case WM_DESTROY:
@@ -195,6 +218,8 @@ void MainWindow::initializeControls() {
         m_hInstance,
         NULL
     );
+
+    initializeProfileControls();
 
     // Create token count controls
     const auto& tokens = m_tokenManager->getAllTokenCounts();
@@ -337,5 +362,561 @@ void MainWindow::drawToken() {
     else {
         MessageBoxW(m_hwnd, L"No tokens available to draw", L"Information", MB_OK | MB_ICONINFORMATION);
         OutputDebugStringA("No token available to draw!\n");
+    }
+}
+
+
+
+// 프로필 컨트롤 초기화 함수
+void MainWindow::initializeProfileControls() {
+    // 먼저 탭 컨트롤 생성
+    createProfileTab();
+    
+    // 각 프로필에 대한 컨트롤 생성
+    for (size_t i = 0; i < m_profileManager->getProfileCount(); i++) {
+        createProfileControls(i);
+    }
+    
+    // 프로필 추가 버튼 생성
+    CreateWindowW(
+        L"BUTTON", L"+",
+        WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+        700, 50, 30, 30,
+        m_hwnd, (HMENU)Constants::ID_ADD_PROFILE_BUTTON,
+        m_hInstance, NULL
+    );
+    
+    // 초기 프로필 표시 업데이트
+    updateAllProfileDisplays();
+}
+
+// 프로필 탭 생성 함수
+void MainWindow::createProfileTab() {
+    m_profileTab = CreateWindowW(
+        WC_TABCONTROLW, NULL,
+        WS_VISIBLE | WS_CHILD | TCS_TABS,
+        400, 50, 280, 350,
+        m_hwnd, (HMENU)Constants::ID_PROFILE_TAB,
+        m_hInstance, NULL
+    );
+    
+    // 기존 프로필에 대한 탭 추가
+    for (size_t i = 0; i < m_profileManager->getProfileCount(); i++) {
+        const Profile* profile = m_profileManager->getProfile(i);
+        if (profile) {
+            std::wstring wname(profile->getName().begin(), profile->getName().end());
+            
+            TCITEMW tie = {0};
+            tie.mask = TCIF_TEXT;
+            tie.pszText = const_cast<LPWSTR>(wname.c_str());
+            
+            TabCtrl_InsertItem(m_profileTab, i, &tie);
+        }
+    }
+}
+
+// 프로필 컨트롤 생성 함수
+void MainWindow::createProfileControls(int profileIndex) {
+    const int baseX = 410;
+    const int baseY = 90;
+    const int editWidth = 80;
+    const int buttonWidth = 30;
+    const int rowHeight = 30;
+    
+    Profile* profile = m_profileManager->getProfile(profileIndex);
+    if (!profile) return;
+    
+    std::vector<HWND>& controls = m_profileControls[profileIndex];
+    controls.clear();
+    
+    // 이름 입력 영역
+    CreateWindowW(
+        L"STATIC", L"Name:",
+        WS_VISIBLE | WS_CHILD,
+        baseX, baseY, 60, rowHeight,
+        m_hwnd, NULL, m_hInstance, NULL
+    );
+    
+    HWND nameEdit = CreateWindowW(
+        L"EDIT", L"",
+        WS_VISIBLE | WS_CHILD | WS_BORDER | ES_AUTOHSCROLL,
+        baseX + 60, baseY, editWidth + 50, rowHeight,
+        m_hwnd, (HMENU)(Constants::ID_PROFILE_NAME_EDIT + profileIndex),
+        m_hInstance, NULL
+    );
+    controls.push_back(nameEdit);
+    
+    // 최대 액션 입력 영역
+    CreateWindowW(
+        L"STATIC", L"Maximum Actions:",
+        WS_VISIBLE | WS_CHILD,
+        baseX, baseY + rowHeight, 60, rowHeight,
+        m_hwnd, NULL, m_hInstance, NULL
+    );
+    
+    HWND maxActionsEdit = CreateWindowW(
+        L"EDIT", L"",
+        WS_VISIBLE | WS_CHILD | WS_BORDER | ES_NUMBER,
+        baseX + 60, baseY + rowHeight, editWidth, rowHeight,
+        m_hwnd, (HMENU)(Constants::ID_MAX_ACTIONS_EDIT + profileIndex),
+        m_hInstance, NULL
+    );
+    controls.push_back(maxActionsEdit);
+    
+    // 현재 액션 영역
+    CreateWindowW(
+        L"STATIC", L"Current Actions:",
+        WS_VISIBLE | WS_CHILD,
+        baseX, baseY + rowHeight * 2, 60, rowHeight,
+        m_hwnd, NULL, m_hInstance, NULL
+    );
+    
+    HWND currentActionsEdit = CreateWindowW(
+        L"EDIT", L"",
+        WS_VISIBLE | WS_CHILD | WS_BORDER | ES_NUMBER | ES_READONLY,
+        baseX + 60, baseY + rowHeight * 2, editWidth, rowHeight,
+        m_hwnd, (HMENU)(Constants::ID_CURRENT_ACTIONS_EDIT + profileIndex),
+        m_hInstance, NULL
+    );
+    controls.push_back(currentActionsEdit);
+    
+    // 액션 증가/감소 버튼
+    HWND actionsUpButton = CreateWindowW(
+        L"BUTTON", L"+",
+        WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+        baseX + 60 + editWidth + 5, baseY + rowHeight * 2, buttonWidth, rowHeight,
+        m_hwnd, (HMENU)(Constants::ID_ACTIONS_UP_BUTTON + profileIndex),
+        m_hInstance, NULL
+    );
+    controls.push_back(actionsUpButton);
+    
+    HWND actionsDownButton = CreateWindowW(
+        L"BUTTON", L"-",
+        WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+        baseX + 60 + editWidth + 5 + buttonWidth + 5, baseY + rowHeight * 2, buttonWidth, rowHeight,
+        m_hwnd, (HMENU)(Constants::ID_ACTIONS_DOWN_BUTTON + profileIndex),
+        m_hInstance, NULL
+    );
+    controls.push_back(actionsDownButton);
+    
+    // 리셋 버튼
+    HWND resetButton = CreateWindowW(
+        L"BUTTON", L"Reset",
+        WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+        baseX + 60 + editWidth + 5 + (buttonWidth + 5) * 2, baseY + rowHeight * 2, 50, rowHeight,
+        m_hwnd, (HMENU)(Constants::ID_ACTIONS_RESET_BUTTON + profileIndex),
+        m_hInstance, NULL
+    );
+    controls.push_back(resetButton);
+    
+    // Damage 영역
+    CreateWindowW(
+        L"STATIC", L"Damage:",
+        WS_VISIBLE | WS_CHILD,
+        baseX, baseY + rowHeight * 3, 60, rowHeight,
+        m_hwnd, NULL, m_hInstance, NULL
+    );
+    
+    HWND damageEdit = CreateWindowW(
+        L"EDIT", L"0",
+        WS_VISIBLE | WS_CHILD | WS_BORDER | ES_NUMBER | ES_READONLY,
+        baseX + 60, baseY + rowHeight * 3, editWidth, rowHeight,
+        m_hwnd, (HMENU)(Constants::ID_DAMAGE_EDIT + profileIndex),
+        m_hInstance, NULL
+    );
+    controls.push_back(damageEdit);
+    
+    HWND damageUpButton = CreateWindowW(
+        L"BUTTON", L"+",
+        WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+        baseX + 60 + editWidth + 5, baseY + rowHeight * 3, buttonWidth, rowHeight,
+        m_hwnd, (HMENU)(Constants::ID_DAMAGE_UP_BUTTON + profileIndex),
+        m_hInstance, NULL
+    );
+    controls.push_back(damageUpButton);
+    
+    HWND damageDownButton = CreateWindowW(
+        L"BUTTON", L"-",
+        WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+        baseX + 60 + editWidth + 5 + buttonWidth + 5, baseY + rowHeight * 3, buttonWidth, rowHeight,
+        m_hwnd, (HMENU)(Constants::ID_DAMAGE_DOWN_BUTTON + profileIndex),
+        m_hInstance, NULL
+    );
+    controls.push_back(damageDownButton);
+    
+    // Horror 영역
+    CreateWindowW(
+        L"STATIC", L"Horror:",
+        WS_VISIBLE | WS_CHILD,
+        baseX, baseY + rowHeight * 4, 60, rowHeight,
+        m_hwnd, NULL, m_hInstance, NULL
+    );
+    
+    HWND horrorEdit = CreateWindowW(
+        L"EDIT", L"0",
+        WS_VISIBLE | WS_CHILD | WS_BORDER | ES_NUMBER | ES_READONLY,
+        baseX + 60, baseY + rowHeight * 4, editWidth, rowHeight,
+        m_hwnd, (HMENU)(Constants::ID_HORROR_EDIT + profileIndex),
+        m_hInstance, NULL
+    );
+    controls.push_back(horrorEdit);
+    
+    HWND horrorUpButton = CreateWindowW(
+        L"BUTTON", L"+",
+        WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+        baseX + 60 + editWidth + 5, baseY + rowHeight * 4, buttonWidth, rowHeight,
+        m_hwnd, (HMENU)(Constants::ID_HORROR_UP_BUTTON + profileIndex),
+        m_hInstance, NULL
+    );
+    controls.push_back(horrorUpButton);
+    
+    HWND horrorDownButton = CreateWindowW(
+        L"BUTTON", L"-",
+        WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+        baseX + 60 + editWidth + 5 + buttonWidth + 5, baseY + rowHeight * 4, buttonWidth, rowHeight,
+        m_hwnd, (HMENU)(Constants::ID_HORROR_DOWN_BUTTON + profileIndex),
+        m_hInstance, NULL
+    );
+    controls.push_back(horrorDownButton);
+    
+    // Clues 영역
+    CreateWindowW(
+        L"STATIC", L"Clues:",
+        WS_VISIBLE | WS_CHILD,
+        baseX, baseY + rowHeight * 5, 60, rowHeight,
+        m_hwnd, NULL, m_hInstance, NULL
+    );
+    
+    HWND cluesEdit = CreateWindowW(
+        L"EDIT", L"0",
+        WS_VISIBLE | WS_CHILD | WS_BORDER | ES_NUMBER | ES_READONLY,
+        baseX + 60, baseY + rowHeight * 5, editWidth, rowHeight,
+        m_hwnd, (HMENU)(Constants::ID_CLUES_EDIT + profileIndex),
+        m_hInstance, NULL
+    );
+    controls.push_back(cluesEdit);
+    
+    HWND cluesUpButton = CreateWindowW(
+        L"BUTTON", L"+",
+        WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+        baseX + 60 + editWidth + 5, baseY + rowHeight * 5, buttonWidth, rowHeight,
+        m_hwnd, (HMENU)(Constants::ID_CLUES_UP_BUTTON + profileIndex),
+        m_hInstance, NULL
+    );
+    controls.push_back(cluesUpButton);
+    
+    HWND cluesDownButton = CreateWindowW(
+        L"BUTTON", L"-",
+        WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+        baseX + 60 + editWidth + 5 + buttonWidth + 5, baseY + rowHeight * 5, buttonWidth, rowHeight,
+        m_hwnd, (HMENU)(Constants::ID_CLUES_DOWN_BUTTON + profileIndex),
+        m_hInstance, NULL
+    );
+    controls.push_back(cluesDownButton);
+    
+    // Resources 영역
+    CreateWindowW(
+        L"STATIC", L"Resources:",
+        WS_VISIBLE | WS_CHILD,
+        baseX, baseY + rowHeight * 6, 60, rowHeight,
+        m_hwnd, NULL, m_hInstance, NULL
+    );
+    
+    HWND resourcesEdit = CreateWindowW(
+        L"EDIT", L"0",
+        WS_VISIBLE | WS_CHILD | WS_BORDER | ES_NUMBER | ES_READONLY,
+        baseX + 60, baseY + rowHeight * 6, editWidth, rowHeight,
+        m_hwnd, (HMENU)(Constants::ID_RESOURCES_EDIT + profileIndex),
+        m_hInstance, NULL
+    );
+    controls.push_back(resourcesEdit);
+    
+    HWND resourcesUpButton = CreateWindowW(
+        L"BUTTON", L"+",
+        WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+        baseX + 60 + editWidth + 5, baseY + rowHeight * 6, buttonWidth, rowHeight,
+        m_hwnd, (HMENU)(Constants::ID_RESOURCES_UP_BUTTON + profileIndex),
+        m_hInstance, NULL
+    );
+    controls.push_back(resourcesUpButton);
+    
+    HWND resourcesDownButton = CreateWindowW(
+        L"BUTTON", L"-",
+        WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+        baseX + 60 + editWidth + 5 + buttonWidth + 5, baseY + rowHeight * 6, buttonWidth, rowHeight,
+        m_hwnd, (HMENU)(Constants::ID_RESOURCES_DOWN_BUTTON + profileIndex),
+        m_hInstance, NULL
+    );
+    controls.push_back(resourcesDownButton);
+    
+    // 초기값으로 UI 설정
+    updateProfileDisplay(profileIndex);
+    
+    // 처음에는 모든 컨트롤이 표시되지만, 현재 탭이 아닌 것은 숨김
+    int currentTab = TabCtrl_GetCurSel(m_profileTab);
+    for (HWND control : controls) {
+        ShowWindow(control, currentTab == profileIndex ? SW_SHOW : SW_HIDE);
+    }
+}
+
+// 프로필 표시 업데이트
+void MainWindow::updateProfileDisplay(int profileIndex) {
+    Profile* profile = m_profileManager->getProfile(profileIndex);
+    if (!profile || profileIndex >= ProfileManager::MAX_PROFILES) return;
+    
+    std::vector<HWND>& controls = m_profileControls[profileIndex];
+    if (controls.empty()) return;
+    
+    // 이름 업데이트
+    std::wstring wname(profile->getName().begin(), profile->getName().end());
+    SetWindowTextW(controls[0], wname.c_str());
+    
+    // 최대 액션 업데이트
+    SetWindowTextW(controls[1], std::to_wstring(profile->getMaxActions()).c_str());
+    
+    // 현재 액션 업데이트
+    SetWindowTextW(controls[2], std::to_wstring(profile->getCurrentActions()).c_str());
+    
+    // Damage 업데이트
+    SetWindowTextW(controls[6], std::to_wstring(profile->getDamage()).c_str());
+    
+    // Horror 업데이트
+    SetWindowTextW(controls[9], std::to_wstring(profile->getHorror()).c_str());
+    
+    // Clues 업데이트
+    SetWindowTextW(controls[12], std::to_wstring(profile->getClues()).c_str());
+    
+    // Resources 업데이트
+    SetWindowTextW(controls[15], std::to_wstring(profile->getResources()).c_str());
+    
+    // 탭 텍스트 업데이트
+    TCITEMW tie = {0};
+    tie.mask = TCIF_TEXT;
+    tie.pszText = const_cast<LPWSTR>(wname.c_str());
+    TabCtrl_SetItem(m_profileTab, profileIndex, &tie);
+}
+
+// 모든 프로필 표시 업데이트
+void MainWindow::updateAllProfileDisplays() {
+    for (size_t i = 0; i < m_profileManager->getProfileCount(); i++) {
+        updateProfileDisplay(i);
+    }
+}
+
+// 현재 선택된 프로필 인덱스 가져오기
+int MainWindow::getCurrentProfileIndex() {
+    return TabCtrl_GetCurSel(m_profileTab);
+}
+
+// 프로필 액션 처리
+void MainWindow::handleProfileAction(WPARAM wParam, LPARAM lParam) {
+    WORD cmdId = LOWORD(wParam);
+    
+    // 프로필 추가 버튼
+    if (cmdId == Constants::ID_ADD_PROFILE_BUTTON) {
+        if (m_profileManager->getProfileCount() < ProfileManager::MAX_PROFILES) {
+            std::string name = "Investigator " + std::to_string(m_profileManager->getProfileCount() + 1);
+            if (m_profileManager->addProfile(name)) {
+                // 새 프로필 위한 탭 생성
+                std::wstring wname(name.begin(), name.end());
+                TCITEMW tie = {0};
+                tie.mask = TCIF_TEXT;
+                tie.pszText = const_cast<LPWSTR>(wname.c_str());
+                int newTabIndex = TabCtrl_GetItemCount(m_profileTab);
+                TabCtrl_InsertItem(m_profileTab, newTabIndex, &tie);
+                
+                // 새 프로필 위한 컨트롤 생성
+                createProfileControls(newTabIndex);
+                
+                // 새 탭 선택
+                TabCtrl_SetCurSel(m_profileTab, newTabIndex);
+                
+                // 프로필 컨트롤 표시/숨김 갱신
+                for (int i = 0; i < ProfileManager::MAX_PROFILES; i++) {
+                    if (i < m_profileManager->getProfileCount()) {
+                        for (HWND control : m_profileControls[i]) {
+                            ShowWindow(control, i == newTabIndex ? SW_SHOW : SW_HIDE);
+                        }
+                    }
+                }
+            }
+        } else {
+            MessageBoxW(m_hwnd, L"최대 프로필 수에 도달했습니다.", L"알림", MB_OK | MB_ICONINFORMATION);
+        }
+        return;
+    }
+    
+    // 이름 변경 처리
+    if (cmdId >= Constants::ID_PROFILE_NAME_EDIT && 
+        cmdId < Constants::ID_PROFILE_NAME_EDIT + ProfileManager::MAX_PROFILES) {
+        if (HIWORD(wParam) == EN_KILLFOCUS) {
+            int profileIdx = cmdId - Constants::ID_PROFILE_NAME_EDIT;
+            Profile* profile = m_profileManager->getProfile(profileIdx);
+            if (profile) {
+                wchar_t buffer[256];
+                GetWindowTextW((HWND)lParam, buffer, 256);
+                std::wstring wname(buffer);
+                std::string name(wname.begin(), wname.end());
+                profile->setName(name);
+                
+                // 탭 이름 업데이트
+                TCITEMW tie = {0};
+                tie.mask = TCIF_TEXT;
+                tie.pszText = buffer;
+                TabCtrl_SetItem(m_profileTab, profileIdx, &tie);
+            }
+        }
+        return;
+    }
+    
+    // 최대 액션 변경 처리
+    if (cmdId >= Constants::ID_MAX_ACTIONS_EDIT && 
+        cmdId < Constants::ID_MAX_ACTIONS_EDIT + ProfileManager::MAX_PROFILES) {
+        if (HIWORD(wParam) == EN_KILLFOCUS) {
+            int profileIdx = cmdId - Constants::ID_MAX_ACTIONS_EDIT;
+            Profile* profile = m_profileManager->getProfile(profileIdx);
+            if (profile) {
+                wchar_t buffer[16];
+                GetWindowTextW((HWND)lParam, buffer, 16);
+                int maxActions = std::max(1, _wtoi(buffer));
+                profile->setMaxActions(maxActions);
+                
+                // UI 업데이트
+                updateProfileDisplay(profileIdx);
+            }
+        }
+        return;
+    }
+    
+    // 액션 증가 버튼
+    if (cmdId >= Constants::ID_ACTIONS_UP_BUTTON && 
+        cmdId < Constants::ID_ACTIONS_UP_BUTTON + ProfileManager::MAX_PROFILES) {
+        int profileIdx = cmdId - Constants::ID_ACTIONS_UP_BUTTON;
+        Profile* profile = m_profileManager->getProfile(profileIdx);
+        if (profile) {
+            profile->incrementActions();
+            updateProfileDisplay(profileIdx);
+        }
+        return;
+    }
+    
+    // 액션 감소 버튼
+    if (cmdId >= Constants::ID_ACTIONS_DOWN_BUTTON && 
+        cmdId < Constants::ID_ACTIONS_DOWN_BUTTON + ProfileManager::MAX_PROFILES) {
+        int profileIdx = cmdId - Constants::ID_ACTIONS_DOWN_BUTTON;
+        Profile* profile = m_profileManager->getProfile(profileIdx);
+        if (profile) {
+            profile->decrementActions();
+            updateProfileDisplay(profileIdx);
+        }
+        return;
+    }
+    
+    // 액션 리셋 버튼
+    if (cmdId >= Constants::ID_ACTIONS_RESET_BUTTON && 
+        cmdId < Constants::ID_ACTIONS_RESET_BUTTON + ProfileManager::MAX_PROFILES) {
+        int profileIdx = cmdId - Constants::ID_ACTIONS_RESET_BUTTON;
+        Profile* profile = m_profileManager->getProfile(profileIdx);
+        if (profile) {
+            profile->resetActions();
+            updateProfileDisplay(profileIdx);
+        }
+        return;
+    }
+    
+    // Damage 증가 버튼
+    if (cmdId >= Constants::ID_DAMAGE_UP_BUTTON && 
+        cmdId < Constants::ID_DAMAGE_UP_BUTTON + ProfileManager::MAX_PROFILES) {
+        int profileIdx = cmdId - Constants::ID_DAMAGE_UP_BUTTON;
+        Profile* profile = m_profileManager->getProfile(profileIdx);
+        if (profile) {
+            profile->incrementDamage();
+            updateProfileDisplay(profileIdx);
+        }
+        return;
+    }
+    
+    // Damage 감소 버튼
+    if (cmdId >= Constants::ID_DAMAGE_DOWN_BUTTON && 
+        cmdId < Constants::ID_DAMAGE_DOWN_BUTTON + ProfileManager::MAX_PROFILES) {
+        int profileIdx = cmdId - Constants::ID_DAMAGE_DOWN_BUTTON;
+        Profile* profile = m_profileManager->getProfile(profileIdx);
+        if (profile) {
+            profile->decrementDamage();
+            updateProfileDisplay(profileIdx);
+        }
+        return;
+    }
+    
+    // Horror 증가 버튼
+    if (cmdId >= Constants::ID_HORROR_UP_BUTTON && 
+        cmdId < Constants::ID_HORROR_UP_BUTTON + ProfileManager::MAX_PROFILES) {
+        int profileIdx = cmdId - Constants::ID_HORROR_UP_BUTTON;
+        Profile* profile = m_profileManager->getProfile(profileIdx);
+        if (profile) {
+            profile->incrementHorror();
+            updateProfileDisplay(profileIdx);
+        }
+        return;
+    }
+    
+    // Horror 감소 버튼
+    if (cmdId >= Constants::ID_HORROR_DOWN_BUTTON && 
+        cmdId < Constants::ID_HORROR_DOWN_BUTTON + ProfileManager::MAX_PROFILES) {
+        int profileIdx = cmdId - Constants::ID_HORROR_DOWN_BUTTON;
+        Profile* profile = m_profileManager->getProfile(profileIdx);
+        if (profile) {
+            profile->decrementHorror();
+            updateProfileDisplay(profileIdx);
+        }
+        return;
+    }
+    
+    // Clues 증가 버튼
+    if (cmdId >= Constants::ID_CLUES_UP_BUTTON && 
+        cmdId < Constants::ID_CLUES_UP_BUTTON + ProfileManager::MAX_PROFILES) {
+        int profileIdx = cmdId - Constants::ID_CLUES_UP_BUTTON;
+        Profile* profile = m_profileManager->getProfile(profileIdx);
+        if (profile) {
+            profile->incrementClues();
+            updateProfileDisplay(profileIdx);
+        }
+        return;
+    }
+    
+    // Clues 감소 버튼
+    if (cmdId >= Constants::ID_CLUES_DOWN_BUTTON && 
+        cmdId < Constants::ID_CLUES_DOWN_BUTTON + ProfileManager::MAX_PROFILES) {
+        int profileIdx = cmdId - Constants::ID_CLUES_DOWN_BUTTON;
+        Profile* profile = m_profileManager->getProfile(profileIdx);
+        if (profile) {
+            profile->decrementClues();
+            updateProfileDisplay(profileIdx);
+        }
+        return;
+    }
+    
+    // Resources 증가 버튼
+    if (cmdId >= Constants::ID_RESOURCES_UP_BUTTON && 
+        cmdId < Constants::ID_RESOURCES_UP_BUTTON + ProfileManager::MAX_PROFILES) {
+        int profileIdx = cmdId - Constants::ID_RESOURCES_UP_BUTTON;
+        Profile* profile = m_profileManager->getProfile(profileIdx);
+        if (profile) {
+            profile->incrementResources();
+            updateProfileDisplay(profileIdx);
+        }
+        return;
+    }
+    
+    // Resources 감소 버튼
+    if (cmdId >= Constants::ID_RESOURCES_DOWN_BUTTON && 
+        cmdId < Constants::ID_RESOURCES_DOWN_BUTTON + ProfileManager::MAX_PROFILES) {
+        int profileIdx = cmdId - Constants::ID_RESOURCES_DOWN_BUTTON;
+        Profile* profile = m_profileManager->getProfile(profileIdx);
+        if (profile) {
+            profile->decrementResources();
+            updateProfileDisplay(profileIdx);
+        }
+        return;
     }
 }
