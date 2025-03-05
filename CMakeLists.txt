@@ -13,31 +13,23 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/bin/Release)
 # Source files
 set(SOURCES
     src/main.cpp
-    src/MainWindow.cpp
     src/TokenManager.cpp
     src/AudioPlayer.cpp
-    src/SerialCommunicator.cpp
-    src/Profile.cpp
-    src/ProfileManager.cpp
 )
 
 # Header files
 set(HEADERS
-    src/MainWindow.h
     src/TokenManager.h
     src/AudioPlayer.h
-    src/SerialCommunicator.h
-    src/Constants.h
-    src/Profile.h
-    src/ProfileManager.h
 )
 
 # Add executable
-add_executable(arkham_voice_token WIN32 ${SOURCES} ${HEADERS})
+add_executable(arkham_voice_token ${SOURCES} ${HEADERS})
+target_link_options(arkham_voice_token PRIVATE "/SUBSYSTEM:CONSOLE")
 
 # Link libraries for Windows
 if(WIN32)
-    target_link_libraries(arkham_voice_token PRIVATE ole32 oleaut32 winmm comctl32)
+    target_link_libraries(arkham_voice_token PRIVATE winmm)
 endif()
 
 # Copy resources to output directory
