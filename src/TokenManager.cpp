@@ -62,14 +62,6 @@ bool TokenManager::loadScenariosFromYaml(const std::string& yamlPath) {
             m_scenarios.push_back(scenario);
         }
         
-        // Set first scenario and difficulty as default if available
-        if (!m_scenarios.empty()) {
-            m_currentScenarioIndex = 0;
-            if (!m_scenarios[0].difficulties.empty()) {
-                m_currentDifficultyIndex = 0;
-            }
-        }
-        
         resetTokenUsages();
         return true;
         
