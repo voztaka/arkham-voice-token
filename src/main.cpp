@@ -3,6 +3,7 @@
 #include <iostream>
 #include <string>
 #include <algorithm>
+#include <iomanip>
 
 class CLIInterface {
     TokenManager tokenManager;
@@ -81,9 +82,45 @@ class CLIInterface {
     }
 
     void handleStats() {
-        std::cout << "\nToken Usage Statistics:\n";
-        for (const auto& [token, usage] : tokenManager.getAllTokenUsages()) {
-            std::cout << "  " << token << ": " << usage << " draws\n";
+        std::cout << "\nToken Probability Statistics:\n";
+    
+        // Get current token counts and usage statistics
+        const auto& tokenCounts = tokenManager.getAllTokenCounts();
+        const auto& tokenUsages = tokenManager.getAllTokenUsages();
+    
+        // Calculate weights for each token
+        std::map<std::string, double> tokenWeights;
+        double totalWeight = 0.0;
+    
+        for (const auto& [token, count] : tokenCounts) {
+            // Find usage count (default to 0 if not found)
+            int usageCount = 0;
+            auto it = tokenUsages.find(token);
+            if (it != tokenUsages.end()) {
+                usageCount = it->second;
+            }
+        
+            // Calculate weight: original count / (1 + times drawn)
+            double weight = static_cast<double>(count) / (1.0 + usageCount);
+            tokenWeights[token] = weight;
+            totalWeight += weight;
+        }
+    
+        // Display probabilities for each token
+        for (const auto& [token, weight] : tokenWeights) {
+            // Calculate probability as weight / total weight
+            double probability = (totalWeight > 0) ? (weight / totalWeight) * 100.0 : 0.0;
+        
+            int usageCount = 0;
+            auto it = tokenUsages.find(token);
+            if (it != tokenUsages.end()) {
+                usageCount = it->second;
+            }
+        
+            std::cout << "  " << token << ": " 
+                    << std::fixed << std::setprecision(2) << probability << "% "
+                    << "(Count: " << tokenCounts.at(token) 
+                    << ", Drawn: " << usageCount << ")\n";
         }
     }
 
