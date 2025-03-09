@@ -26,7 +26,7 @@ class CLIInterface {
             if (audioPlayer.playTokenSound(*token)) {
                 std::cout << "Playing sound for " << *token << "\n";
             } else {
-                std::cout << "Error playing sound\n";
+                std::cout << "Error playing sound: " << audioPlayer.getLastError() << "\n";
             }
         } else {
             std::cout << "No tokens available!\n";

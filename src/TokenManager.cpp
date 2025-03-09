@@ -4,7 +4,10 @@
 #include <chrono>
 
 #ifdef _WIN32
-#include <windows.h>
+    #include <windows.h>
+#else 
+    #include <unistd.h>
+    #include <limits.h>
 #endif
 
 TokenManager::TokenManager() 
@@ -20,7 +23,12 @@ std::string TokenManager::getResourcePath(const std::string& filename) {
     std::string dirPath = exePath.substr(0, exePath.find_last_of("\\"));
     return dirPath + "\\resources\\" + filename;
 #else
-    return "resources/" + filename;
+    // Get Linux executable path
+    char result[PATH_MAX];
+    ssize_t count = readlink("/proc/self/exe", result, PATH_MAX);
+    std::string execPath = std::string(result, (count > 0) ? count : 0);
+    std::string dirPath = execPath.substr(0, execPath.find_last_of("/"));
+    return dirPath + "/resources/" + filename;
 #endif
 }
 

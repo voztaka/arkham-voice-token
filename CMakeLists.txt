@@ -25,11 +25,21 @@ set(HEADERS
 
 # Add executable
 add_executable(arkham_voice_token ${SOURCES} ${HEADERS})
-target_link_options(arkham_voice_token PRIVATE "/SUBSYSTEM:CONSOLE")
 
-# Link libraries for Windows
+# Platform-specific dependencies
 if(WIN32)
     target_link_libraries(arkham_voice_token PRIVATE winmm)
+    target_link_options(arkham_voice_token PRIVATE "/SUBSYSTEM:CONSOLE")
+else()
+    # Find SDL2 and SDL2_mixer for Linux
+    find_package(SDL2 REQUIRED)
+    find_package(SDL2_mixer REQUIRED)
+    
+    # Include directories for SDL2
+    target_include_directories(arkham_voice_token PRIVATE ${SDL2_INCLUDE_DIRS})
+    
+    # Link SDL2 and SDL2_mixer
+    target_link_libraries(arkham_voice_token PRIVATE ${SDL2_LIBRARIES} SDL2_mixer)
 endif()
 
 # Copy resources to output directory
