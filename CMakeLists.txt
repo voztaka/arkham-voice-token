@@ -10,6 +10,8 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/bin/Debug)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/bin/Release)
 
+find_package(yaml-cpp REQUIRED)
+
 # Source files
 set(SOURCES
     src/main.cpp
@@ -25,6 +27,8 @@ set(HEADERS
 
 # Add executable
 add_executable(arkham_voice_token ${SOURCES} ${HEADERS})
+
+target_link_libraries(arkham_voice_token PRIVATE yaml-cpp)
 
 # Platform-specific dependencies
 if(WIN32)
@@ -49,5 +53,8 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy_directory 
             "${CMAKE_SOURCE_DIR}/resources" 
             "$<TARGET_FILE_DIR:arkham_voice_token>/resources"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory 
+            "${CMAKE_SOURCE_DIR}/config" 
+            "$<TARGET_FILE_DIR:arkham_voice_token>/config"
     COMMENT "Copying resources directory to output directory"
 )
